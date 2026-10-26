@@ -1,119 +1,122 @@
+const postService = require("../services/posts.service");
 
-const postsService = require("../services/posts.service");
+const allowedSortFields = ["createdAt", "updatedAt"];
 
-async function create(req, res) {
-  const { imageUrl, caption, location } = req.body;
-
-  if (typeof imageUrl !== "string" || !imageUrl.trim()) {
-    return res.status(400).json({ error: "imageUrl is required" });
+function isValidDate(value) {
+  if (typeof value !== "string" || value.trim() === "") {
+    return false;
   }
 
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime());
+}
+
+async function getPosts(req, res, next) {
   try {
-    const post = await postsService.createPost({
-      imageUrl,
-      ...(caption !== undefined && { caption }),
-      ...(location !== undefined && { location })
+    const page = req.query.page === undefined ? 1 : Number(req.query.page);
+    const requestedLimit =
+      req.query.limit === undefined ? 10 : Number(req.query.limit);
+
+    if (
+      !Number.isInteger(page) ||
+      page <= 0 ||
+      !Number.isInteger(requestedLimit) ||
+      requestedLimit <= 0
+    ) {
+      return res
+        .status(400)
+        .json({ error: "page and limit must be positive integers" });
+    }
+
+    const limit = Math.min(requestedLimit, 50);
+    const sortBy = req.query.sortBy || "createdAt";
+    const order = req.query.order || "desc";
+
+    if (!allowedSortFields.includes(sortBy)) {
+      return res.status(400).json({
+        error: "sortBy must be one of: createdAt, updatedAt",
+      });
+    }
+
+    if (!["asc", "desc"].includes(order)) {
+      return res.status(400).json({
+        error: "order must be asc or desc",
+      });
+    }
+
+    const { from, to } = req.query;
+
+    if (
+      (from !== undefined && !isValidDate(from)) ||
+      (to !== undefined && !isValidDate(to))
+    ) {
+      return res.status(400).json({
+        error: "from and to must be valid dates",
+      });
+    }
+
+    const result = await postService.getPosts({
+      page,
+      limit,
+      sortBy,
+      order,
+      location: req.query.location,
+      search: req.query.search,
+      from,
+      to,
     });
 
+    return res.json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getPostById(req, res, next) {
+  try {
+    const post = await postService.getPostById(req.params.id);
+
+    if (!post) {
+      return res.status(404).json({ error: "Post not found" });
+    }
+
+    return res.json(post);
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function createPost(req, res, next) {
+  try {
+    const post = await postService.createPost(req.body);
     return res.status(201).json(post);
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 }
 
-async function list(req, res) {
+async function updatePost(req, res, next) {
   try {
-    const posts = await postsService.listPosts();
-    return res.status(200).json(posts);
+    const post = await postService.updatePost(req.params.id, req.body);
+    return res.json(post);
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 }
 
-async function getOne(req, res) {
-  const id = Number(req.params.id);
-
-  if (!Number.isInteger(id) || id <= 0) {
-    return res.status(404).json({ error: "Post not found" });
-  }
-
+async function deletePost(req, res, next) {
   try {
-    const post = await postsService.getPostById(id);
-
-    if (!post) {
-      return res.status(404).json({ error: "Post not found" });
-    }
-
-    return res.status(200).json(post);
+    await postService.deletePost(req.params.id);
+    return res.status(204).send();
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 }
 
-async function update(req, res) {
-  const id = Number(req.params.id);
-
-  if (!Number.isInteger(id) || id <= 0) {
-    return res.status(404).json({ error: "Post not found" });
-  }
-
-  const data = {};
-
-  for (const key of ["imageUrl", "caption", "location"]) {
-    if (Object.prototype.hasOwnProperty.call(req.body, key)) {
-      data[key] = req.body[key];
-    }
-  }
-
-  if (
-    ("imageUrl" in data &&
-      (typeof data.imageUrl !== "string" || !data.imageUrl.trim())) ||
-    ("caption" in data &&
-      data.caption !== null &&
-      typeof data.caption !== "string") ||
-    ("location" in data &&
-      data.location !== null &&
-      typeof data.location !== "string")
-  ) {
-    return res.status(400).json({ error: "Invalid update data" });
-  }
-
-  try {
-    const post = await postsService.updatePost(id, data);
-
-    if (!post) {
-      return res.status(404).json({ error: "Post not found" });
-    }
-
-    return res.status(200).json(post);
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: "Internal server error" });
-  }
-}
-
-async function remove(req, res) {
-  const id = Number(req.params.id);
-
-  if (!Number.isInteger(id) || id <= 0) {
-    return res.status(404).json({ error: "Post not found" });
-  }
-
-  try {
-    const deleted = await postsService.deletePost(id);
-
-    if (!deleted) {
-      return res.status(404).json({ error: "Post not found" });
-    }
-
-    return res.status(204).end();
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: "Internal server error" });
-  }
-}
-
-module.exports = { create, list, getOne, update, remove };
+module.exports = {
+  getPosts,
+  getPostById,
+  createPost,
+  updatePost,
+  deletePost,
+};

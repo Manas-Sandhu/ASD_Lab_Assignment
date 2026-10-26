@@ -1,123 +1,113 @@
-const usersService = require("../services/users.service");
 
-async function create(req, res) {
-  const { username, email, fullname, bio } = req.body;
+const userService = require("../services/users.service");
 
-  if (!username || !email || !fullname) {
-    return res.status(400).json({
-      error: "username, email and fullname are required"
-    });
-  }
+const allowedSortFields = ["createdAt", "username", "fullname"];
 
+async function getUsers(req, res, next) {
   try {
-    const user = await usersService.createUser({
-      username,
-      email,
-      fullname,
-      ...(bio !== undefined && { bio })
-    });
+    const page = req.query.page === undefined ? 1 : Number(req.query.page);
+    const requestedLimit =
+      req.query.limit === undefined ? 10 : Number(req.query.limit);
 
-    return res.status(201).json(user);
-  } catch (error) {
-    if (error.code === "P2002") {
-      return res.status(409).json({
-        error: "username or email already taken"
+    if (
+      !Number.isInteger(page) ||
+      page <= 0 ||
+      !Number.isInteger(requestedLimit) ||
+      requestedLimit <= 0
+    ) {
+      return res
+        .status(400)
+        .json({ error: "page and limit must be positive integers" });
+    }
+
+    const limit = Math.min(requestedLimit, 50);
+    const sortBy = req.query.sortBy || "createdAt";
+    const order = req.query.order || "desc";
+
+    if (!allowedSortFields.includes(sortBy)) {
+      return res.status(400).json({
+        error: "sortBy must be one of: createdAt, username, fullname",
       });
     }
 
-    console.error(error);
-    return res.status(500).json({ error: "Internal server error" });
-  }
-}
+    if (!["asc", "desc"].includes(order)) {
+      return res.status(400).json({
+        error: "order must be asc or desc",
+      });
+    }
 
-async function list(req, res) {
-  try {
-    const users = await usersService.listUsers();
-    return res.status(200).json(users);
+    let isPrivate;
+
+    if (req.query.isPrivate !== undefined) {
+      if (!["true", "false"].includes(req.query.isPrivate)) {
+        return res.status(400).json({
+          error: "isPrivate must be true or false",
+        });
+      }
+
+      isPrivate = req.query.isPrivate === "true";
+    }
+
+    const result = await userService.getUsers({
+      page,
+      limit,
+      sortBy,
+      order,
+      isPrivate,
+      search: req.query.search,
+    });
+
+    return res.json(result);
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 }
 
-async function getOne(req, res) {
-  const id = Number(req.params.id);
-
-  if (!Number.isInteger(id) || id <= 0) {
-    return res.status(404).json({ error: "User not found" });
-  }
-
+async function getUserById(req, res, next) {
   try {
-    const user = await usersService.getUserById(id);
+    const user = await userService.getUserById(req.params.id);
 
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    return res.status(200).json(user);
+    return res.json(user);
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 }
 
-async function update(req, res) {
-  const id = Number(req.params.id);
-
-  if (!Number.isInteger(id) || id <= 0) {
-    return res.status(404).json({ error: "User not found" });
-  }
-
-  const data = {};
-
-  for (const key of ["fullname", "bio", "isPrivate"]) {
-    if (Object.prototype.hasOwnProperty.call(req.body, key)) {
-      data[key] = req.body[key];
-    }
-  }
-
-  if (
-    ("fullname" in data &&
-      (typeof data.fullname !== "string" || !data.fullname.trim())) ||
-    ("bio" in data && data.bio !== null && typeof data.bio !== "string") ||
-    ("isPrivate" in data && typeof data.isPrivate !== "boolean")
-  ) {
-    return res.status(400).json({ error: "Invalid update data" });
-  }
-
+async function createUser(req, res, next) {
   try {
-    const user = await usersService.updateUser(id, data);
-
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    return res.status(200).json(user);
+    const user = await userService.createUser(req.body);
+    return res.status(201).json(user);
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 }
 
-async function remove(req, res) {
-  const id = Number(req.params.id);
-
-  if (!Number.isInteger(id) || id <= 0) {
-    return res.status(404).json({ error: "User not found" });
-  }
-
+async function updateUser(req, res, next) {
   try {
-    const deleted = await usersService.deleteUser(id);
-
-    if (!deleted) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    return res.status(204).end();
+    const user = await userService.updateUser(req.params.id, req.body);
+    return res.json(user);
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 }
 
-module.exports = { create, list, getOne, update, remove };
+async function deleteUser(req, res, next) {
+  try {
+    await userService.deleteUser(req.params.id);
+    return res.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+}
+
+module.exports = {
+  getUsers,
+  getUserById,
+  createUser,
+  updateUser,
+  deleteUser,
+};
