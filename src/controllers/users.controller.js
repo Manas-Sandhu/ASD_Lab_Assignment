@@ -1,4 +1,3 @@
-
 const userService = require("../services/users.service");
 
 const allowedSortFields = ["createdAt", "username", "fullname"];
@@ -47,6 +46,17 @@ async function getUsers(req, res, next) {
 
       isPrivate = req.query.isPrivate === "true";
     }
+    let hasPosts;
+
+    if (req.query.hasPosts !== undefined) {
+      if (!["true", "false"].includes(req.query.hasPosts)) {
+        return res.status(400).json({
+          error: "hasPosts must be true or false",
+        });
+      }
+
+      hasPosts = req.query.hasPosts;
+    }
 
     const result = await userService.getUsers({
       page,
@@ -55,6 +65,7 @@ async function getUsers(req, res, next) {
       order,
       isPrivate,
       search: req.query.search,
+      hasPosts,
     });
 
     return res.json(result);
@@ -103,6 +114,71 @@ async function deleteUser(req, res, next) {
     next(error);
   }
 }
+async function getUserPosts(req, res, next) {
+  try {
+    const page = req.query.page === undefined ? 1 : Number(req.query.page);
+    const requestedLimit =
+      req.query.limit === undefined ? 10 : Number(req.query.limit);
+
+    if (
+      !Number.isInteger(page) ||
+      page <= 0 ||
+      !Number.isInteger(requestedLimit) ||
+      requestedLimit <= 0
+    ) {
+      return res
+        .status(400)
+        .json({ error: "page and limit must be positive integers" });
+    }
+
+    const limit = Math.min(requestedLimit, 50);
+
+    const result = await userService.getUserPosts(req.params.id, {
+      page,
+      limit,
+    });
+
+    if (!result) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    return res.json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getLikedPosts(req, res, next) {
+  try {
+    const page = req.query.page === undefined ? 1 : Number(req.query.page);
+    const requestedLimit =
+      req.query.limit === undefined ? 10 : Number(req.query.limit);
+
+    if (
+      !Number.isInteger(page) ||
+      page <= 0 ||
+      !Number.isInteger(requestedLimit) ||
+      requestedLimit <= 0
+    ) {
+      return res.status(400).json({
+        error: "page and limit must be positive integers",
+      });
+    }
+
+    const result = await userService.getLikedPosts(req.params.id, {
+      page,
+      limit: Math.min(requestedLimit, 50),
+    });
+
+    if (!result) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    return res.json(result);
+  } catch (error) {
+    next(error);
+  }
+}
 
 module.exports = {
   getUsers,
@@ -110,4 +186,6 @@ module.exports = {
   createUser,
   updateUser,
   deleteUser,
+  getUserPosts,
+  getLikedPosts,
 };

@@ -1,6 +1,6 @@
 const postService = require("../services/posts.service");
 
-const allowedSortFields = ["createdAt", "updatedAt"];
+const allowedSortFields = ["createdAt", "updatedAt","likes"];
 
 function isValidDate(value) {
   if (typeof value !== "string" || value.trim() === "") {
@@ -34,7 +34,7 @@ async function getPosts(req, res, next) {
 
     if (!allowedSortFields.includes(sortBy)) {
       return res.status(400).json({
-        error: "sortBy must be one of: createdAt, updatedAt",
+        error: "sortBy must be one of: createdAt, updatedAt, likes",
       });
     }
 
@@ -88,7 +88,19 @@ async function getPostById(req, res, next) {
 
 async function createPost(req, res, next) {
   try {
-    const post = await postService.createPost(req.body);
+    const { imageUrl, authorId } = req.body;
+
+    if (!imageUrl || !authorId) {
+      return res.status(400).json({
+        error: "imageUrl and authorId are required",
+      });
+    }
+
+    const post = await postService.createPost({
+      imageUrl,
+      authorId: Number(authorId),
+    });
+
     return res.status(201).json(post);
   } catch (error) {
     next(error);
@@ -112,6 +124,19 @@ async function deletePost(req, res, next) {
     next(error);
   }
 }
+async function getPostLikes(req, res, next) {
+  try {
+    const likes = await postService.getPostLikes(req.params.id);
+
+    if (likes === null) {
+      return res.status(404).json({ error: "Post not found" });
+    }
+
+    return res.json(likes.map((like) => like.user));
+  } catch (error) {
+    next(error);
+  }
+}
 
 module.exports = {
   getPosts,
@@ -119,4 +144,5 @@ module.exports = {
   createPost,
   updatePost,
   deletePost,
+  getPostLikes,
 };
